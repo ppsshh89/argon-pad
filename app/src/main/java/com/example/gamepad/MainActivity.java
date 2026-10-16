@@ -45,10 +45,10 @@ public class MainActivity extends Activity {
     private static DatagramSocket udpSocket;
 
     private SharedPreferences prefs;
-    private String serverIp = "192.168.0.10";
+    private String serverIp = "26.2.240.0";
     private final int serverPort = 5005;
 
-    private boolean isTouchPassthrough = false; // true면 스마트폰/문라이트 화면이 직접 눌림
+    private boolean isTouchPassthrough = false;
     private boolean isEditMode = false;
     private boolean isPadHidden = false;
     private float globalAlpha = 0.70f;
@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private PadItem selectedItem = null;
     private TextView tvSelectedInfo;
     private SeekBar seekIndividualSize;
+    private Button btnIpRef; // IP 버튼 실시간 갱신용
 
     private static class PadItem {
         String cmd;
@@ -66,7 +67,7 @@ public class MainActivity extends Activity {
         int baseW, baseH;
         float itemScale = 1.0f;
         boolean isPressed = false;
-        float knobX = 0f, knobY = 0f; // -1.0 ~ 1.0
+        float knobX = 0f, knobY = 0f;
 
         float getW(float gScale) { return Math.max(55f, baseW * gScale * itemScale); }
         float getH(float gScale) { return Math.max(55f, baseH * gScale * itemScale); }
@@ -116,14 +117,14 @@ public class MainActivity extends Activity {
 
     private void startFloatingPad() {
         if (isOverlayRunning) {
-            Toast.makeText(this, "아르곤 패드가 이미 실행 중입니다.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "패드가 이미 실행 중입니다.", Toast.LENGTH_SHORT).show();
             return;
         }
         isOverlayRunning = true;
 
         Context appCtx = getApplicationContext();
         wm = (WindowManager) appCtx.getSystemService(WINDOW_SERVICE);
-        serverIp = prefs.getString("server_ip", "192.168.0.10");
+        serverIp = prefs.getString("server_ip", "26.2.240.0");
         globalScale = prefs.getFloat("global_scale", 1.0f);
         globalAlpha = prefs.getFloat("global_alpha", 0.70f);
 
@@ -139,7 +140,6 @@ public class MainActivity extends Activity {
 
         loadAllPadItems(appCtx);
 
-        // 10손가락 통합 멀티터치 캔버스 생성
         padCanvasView = new MultiTouchPadView(appCtx);
         padCanvasParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -152,7 +152,6 @@ public class MainActivity extends Activity {
         padCanvasParams.gravity = Gravity.TOP | Gravity.LEFT;
         wm.addView(padCanvasView, padCanvasParams);
 
-        // 상단 컨트롤 바 생성 (항상 최상단 위치)
         createTopControlOverlay(appCtx);
     }
 
@@ -161,11 +160,11 @@ public class MainActivity extends Activity {
         if (isTouchPassthrough) {
             releaseAllActiveInputs();
             padCanvasParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            btnMode.setText("📱 화면터치중(패드통과)");
+            btnMode.setText("📱 화면터치");
             btnMode.setTextColor(Color.parseColor("#00E5FF"));
         } else {
             padCanvasParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            btnMode.setText("🎮 패드켜짐(멀티터치)");
+            btnMode.setText("🎮 패드온");
             btnMode.setTextColor(Color.parseColor("#76FF03"));
         }
         wm.updateViewLayout(padCanvasView, padCanvasParams);
@@ -176,21 +175,23 @@ public class MainActivity extends Activity {
     private void createTopControlOverlay(Context ctx) {
         LinearLayout container = new LinearLayout(ctx);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setBackgroundColor(Color.parseColor("#BB000000"));
-        container.setPadding(12, 6, 12, 6);
+        container.setBackgroundColor(Color.parseColor("#CC000000"));
+        container.setPadding(8, 4, 8, 4);
 
         LinearLayout mainRow = new LinearLayout(ctx);
         mainRow.setOrientation(LinearLayout.HORIZONTAL);
         mainRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 핵심: 문라이트 앱을 켤 때와 패드를 쓸 때를 1초 만에 전환하는 버튼
-        Button btnMode = makeMenuBtn(ctx, "🎮 패드켜짐(멀티터치)");
+        Button btnMode = makeMenuBtn(ctx, "🎮 패드온");
         btnMode.setTextColor(Color.parseColor("#76FF03"));
 
         Button btnHide = makeMenuBtn(ctx, "👁️ 숨김");
         Button btnEdit = makeMenuBtn(ctx, "⚙️ 편집");
-        Button btnAdd = makeMenuBtn(ctx, "➕ 키추가");
-        Button btnIp = makeMenuBtn(ctx, "🌐 IP:" + serverIp);
+        Button btnAdd = makeMenuBtn(ctx, "➕ 추가");
+        
+        // IP 버튼 (글자 잘림 방지를 위해 간결하게 표시)
+        btnIpRef = makeMenuBtn(ctx, "IP:" + serverIp);
+
         Button btnExit = makeMenuBtn(ctx, "❌ 종료");
         btnExit.setTextColor(Color.parseColor("#FF6E6E"));
 
@@ -198,14 +199,14 @@ public class MainActivity extends Activity {
         mainRow.addView(btnHide);
         mainRow.addView(btnEdit);
         mainRow.addView(btnAdd);
-        mainRow.addView(btnIp);
+        mainRow.addView(btnIpRef);
         mainRow.addView(btnExit);
         container.addView(mainRow);
 
         // 편집 모드 패널
         LinearLayout editPanel = new LinearLayout(ctx);
         editPanel.setOrientation(LinearLayout.VERTICAL);
-        editPanel.setPadding(8, 8, 8, 4);
+        editPanel.setPadding(4, 4, 4, 4);
         editPanel.setVisibility(View.GONE);
 
         LinearLayout infoRow = new LinearLayout(ctx);
@@ -213,12 +214,12 @@ public class MainActivity extends Activity {
         infoRow.setGravity(Gravity.CENTER_VERTICAL);
 
         tvSelectedInfo = new TextView(ctx);
-        tvSelectedInfo.setText("버튼을 터치해 드래그 이동 / 크기 조절");
+        tvSelectedInfo.setText("버튼 터치 후 이동 / 크기 조절");
         tvSelectedInfo.setTextColor(Color.YELLOW);
-        tvSelectedInfo.setTextSize(11);
+        tvSelectedInfo.setTextSize(10);
         infoRow.addView(tvSelectedInfo);
 
-        Button btnDel = makeMenuBtn(ctx, "🗑️ 선택삭제");
+        Button btnDel = makeMenuBtn(ctx, "🗑️ 삭제");
         btnDel.setOnClickListener(v -> {
             if (selectedItem != null) {
                 padItems.remove(selectedItem);
@@ -252,15 +253,15 @@ public class MainActivity extends Activity {
         sliderRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvInd = new TextView(ctx);
-        tvInd.setText("개별크기:");
+        tvInd.setText("개별:");
         tvInd.setTextColor(Color.WHITE);
-        tvInd.setTextSize(11);
+        tvInd.setTextSize(10);
         sliderRow.addView(tvInd);
 
         seekIndividualSize = new SeekBar(ctx);
         seekIndividualSize.setMax(170);
         seekIndividualSize.setProgress(50);
-        seekIndividualSize.setLayoutParams(new LinearLayout.LayoutParams(240, -2));
+        seekIndividualSize.setLayoutParams(new LinearLayout.LayoutParams(200, -2));
         seekIndividualSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -276,15 +277,15 @@ public class MainActivity extends Activity {
         sliderRow.addView(seekIndividualSize);
 
         TextView tvGlobal = new TextView(ctx);
-        tvGlobal.setText(" 전체크기:");
+        tvGlobal.setText(" 전체:");
         tvGlobal.setTextColor(Color.WHITE);
-        tvGlobal.setTextSize(11);
+        tvGlobal.setTextSize(10);
         sliderRow.addView(tvGlobal);
 
         SeekBar seekGlobal = new SeekBar(ctx);
         seekGlobal.setMax(130);
         seekGlobal.setProgress(Math.round(globalScale * 100) - 50);
-        seekGlobal.setLayoutParams(new LinearLayout.LayoutParams(220, -2));
+        seekGlobal.setLayoutParams(new LinearLayout.LayoutParams(180, -2));
         seekGlobal.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -300,15 +301,15 @@ public class MainActivity extends Activity {
         sliderRow.addView(seekGlobal);
 
         TextView tvAlpha = new TextView(ctx);
-        tvAlpha.setText(" 투명도:");
+        tvAlpha.setText(" 투명:");
         tvAlpha.setTextColor(Color.WHITE);
-        tvAlpha.setTextSize(11);
+        tvAlpha.setTextSize(10);
         sliderRow.addView(tvAlpha);
 
         SeekBar seekAlpha = new SeekBar(ctx);
         seekAlpha.setMax(85);
         seekAlpha.setProgress(Math.round(globalAlpha * 100) - 15);
-        seekAlpha.setLayoutParams(new LinearLayout.LayoutParams(180, -2));
+        seekAlpha.setLayoutParams(new LinearLayout.LayoutParams(150, -2));
         seekAlpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -345,7 +346,7 @@ public class MainActivity extends Activity {
         });
 
         btnAdd.setOnClickListener(v -> showFloatingAddDialog(ctx));
-        btnIp.setOnClickListener(v -> showFloatingIpDialog(ctx, btnIp));
+        btnIpRef.setOnClickListener(v -> showFloatingIpDialog(ctx, btnIpRef));
         btnExit.setOnClickListener(v -> stopFloatingPad());
 
         WindowManager.LayoutParams topParams = new WindowManager.LayoutParams(
@@ -356,7 +357,7 @@ public class MainActivity extends Activity {
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
         topParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        topParams.y = 8;
+        topParams.y = 4;
 
         topBarView = container;
         wm.addView(topBarView, topParams);
@@ -368,10 +369,10 @@ public class MainActivity extends Activity {
         b.setTextColor(Color.WHITE);
         b.setTextSize(10);
         b.setAllCaps(false);
-        b.setPadding(14, 2, 14, 2);
+        b.setPadding(10, 2, 10, 2);
         b.setBackgroundColor(Color.parseColor("#44FFFFFF"));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, 68);
-        lp.setMargins(3, 0, 3, 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, 64);
+        lp.setMargins(2, 0, 2, 0);
         b.setLayoutParams(lp);
         return b;
     }
@@ -444,16 +445,11 @@ public class MainActivity extends Activity {
         sendUdp("COMBO:ALL:RESET");
     }
 
-    /**
-     * 문라이트와 동일한 10손가락 동시 멀티터치 처리 뷰
-     */
     private class MultiTouchPadView extends View {
         private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF rectF = new RectF();
-
-        // 각 손가락(pointerId)이 조작 중인 스틱 고정 추적
         private final Map<Integer, PadItem> pointerStickMap = new HashMap<>();
         private float editDragOffsetX, editDragOffsetY;
 
@@ -505,7 +501,7 @@ public class MainActivity extends Activity {
                     canvas.drawOval(rectF, fillPaint);
                     canvas.drawOval(rectF, strokePaint);
 
-                    textPaint.setTextSize(Math.max(24f, Math.min(w, h) * 0.24f));
+                    textPaint.setTextSize(Math.max(22f, Math.min(w, h) * 0.22f));
                     textPaint.setAlpha(textAlpha);
                     Paint.FontMetrics fm = textPaint.getFontMetrics();
                     float textY = item.y + h / 2f - (fm.ascent + fm.descent) / 2f;
@@ -523,7 +519,6 @@ public class MainActivity extends Activity {
             int actionIdx = event.getActionIndex();
             int pointerId = event.getPointerId(actionIdx);
 
-            // 1. 편집 모드: 드래그 이동 및 개별 크기 선택
             if (isEditMode) {
                 float tx = event.getX();
                 float ty = event.getY();
@@ -535,7 +530,7 @@ public class MainActivity extends Activity {
                         tvSelectedInfo.setText("선택됨: [" + selectedItem.cmd + "]");
                         seekIndividualSize.setProgress(Math.round(selectedItem.itemScale * 100) - 50);
                     } else {
-                        tvSelectedInfo.setText("선택된 버튼: 없음");
+                        tvSelectedInfo.setText("선택된 버튼 없음");
                     }
                     invalidate();
                 } else if (action == MotionEvent.ACTION_MOVE && selectedItem != null) {
@@ -550,13 +545,12 @@ public class MainActivity extends Activity {
                 return true;
             }
 
-            // 2. 게임 모드: 10손가락 독립 멀티터치 처리
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 float px = event.getX(actionIdx);
                 float py = event.getY(actionIdx);
                 for (int i = padItems.size() - 1; i >= 0; i--) {
                     PadItem item = padItems.get(i);
-                    if (item. isStick && item.contains(px, py, globalScale)) {
+                    if (item.isStick && item.contains(px, py, globalScale)) {
                         pointerStickMap.put(pointerId, item);
                         item.isPressed = true;
                         updateStickKnob(item, px, py);
@@ -579,12 +573,10 @@ public class MainActivity extends Activity {
                 }
             }
 
-            // 현재 화면에 닿아있는 모든 손가락 위치 스캔 (동시 입력 및 슬라이드 완벽 인식)
             int pointerCount = event.getPointerCount();
             Set<PadItem> currentlyTouchedButtons = new HashSet<>();
 
             for (int i = 0; i < pointerCount; i++) {
-                // 방금 화면에서 떨어진 손가락은 제외
                 if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) && i == actionIdx) {
                     continue;
                 }
@@ -592,14 +584,12 @@ public class MainActivity extends Activity {
                 float px = event.getX(i);
                 float py = event.getY(i);
 
-                // 스틱에 할당된 손가락이면 스틱 좌표 업데이트
                 PadItem boundStick = pointerStickMap.get(pid);
                 if (boundStick != null) {
                     updateStickKnob(boundStick, px, py);
                     continue;
                 }
 
-                // 일반 버튼 / 십자키 / 조합키 동시 체크
                 for (PadItem item : padItems) {
                     if (!item.isStick && item.contains(px, py, globalScale)) {
                         currentlyTouchedButtons.add(item);
@@ -607,7 +597,6 @@ public class MainActivity extends Activity {
                 }
             }
 
-            // 이전 프레임과 비교해 새로 눌린 버튼은 DOWN, 떨어진 버튼은 UP 전송
             for (PadItem item : padItems) {
                 if (item.isStick) continue;
                 boolean nowPressed = currentlyTouchedButtons.contains(item);
@@ -660,7 +649,7 @@ public class MainActivity extends Activity {
         box.setBackgroundColor(Color.parseColor("#EE1E1E1E"));
 
         TextView title = new TextView(ctx);
-        title.setText("새 조합키 / 키보드 버튼 추가\n(예: RT+A, LB+RT+A, KEY:SPACE, KEY:SHIFT+Q)");
+        title.setText("새 조합키 / 키보드 버튼 추가\n(예: RT+A, KEY:SPACE, KEY:SHIFT+Q)");
         title.setTextColor(Color.WHITE);
         title.setTextSize(13);
         box.addView(title);
@@ -719,7 +708,7 @@ public class MainActivity extends Activity {
         btnOk.setOnClickListener(v -> {
             serverIp = input.getText().toString().trim();
             prefs.edit().putString("server_ip", serverIp).apply();
-            btnIp.setText("🌐 IP:" + serverIp);
+            btnIp.setText("IP:" + serverIp);
             closePopupDialog();
         });
         btnCancel.setOnClickListener(v -> closePopupDialog());
