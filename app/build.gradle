@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application' version '8.1.0'
+}
+
+android {
+    namespace 'com.example.gamepad'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.example.gamepad"
+        minSdk 24
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+    }
+}
